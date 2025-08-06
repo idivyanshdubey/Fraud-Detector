@@ -204,7 +204,7 @@ def kafka_consumer_worker():
                         app_state.fraud_alerts_buffer.pop(0)
                     
                     # Broadcast to all connected WebSocket clients
-                    asyncio.create_task(manager.broadcast(json.dumps(fraud_alert)))
+                    asyncio.create_task(manager.broadcast(json.dumps({"type": "fraud_alert", "data": fraud_alert})))
                     
                 except Exception as e:
                     logger.error(f"Error processing fraud alert: {e}")
@@ -407,7 +407,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
         if app_state.fraud_alerts_buffer:
             recent_alerts = app_state.fraud_alerts_buffer[-10:]  # Send last 10 alerts
             for alert in recent_alerts:
-                await manager.send_personal_message(json.dumps(alert), websocket)
+                await manager.send_personal_message(json.dumps({"type": "fraud_alert", "data": alert}), websocket)
         
         # Send connection confirmation
         await manager.send_personal_message(json.dumps({

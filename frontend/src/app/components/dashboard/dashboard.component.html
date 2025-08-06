@@ -69,7 +69,7 @@
           type="text"
           placeholder="Search merchants, cards, transactions..."
           [(ngModel)]="searchTerm"
-          (input)="onSearchChange(searchTerm)"
+          (ngModelChange)="onSearchChange()"
           class="search-input-field"
         />
       </div>

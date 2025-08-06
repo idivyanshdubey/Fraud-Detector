@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, AsyncPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MaskCardPipe } from '../../pipes/mask-card.pipe';
@@ -31,20 +31,26 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private subscription = new Subscription();
   private autoRefresh = true;
 
-  constructor(private fraudAlertService: FraudAlertService) {
+  constructor(
+    private fraudAlertService: FraudAlertService,
+    private cdr: ChangeDetectorRef
+  ) {
     this.alerts$ = this.fraudAlertService.getAlerts();
     this.stats$ = this.fraudAlertService.getStats();
     this.connectionStatus$ = this.fraudAlertService.getConnectionStatus();
   }
 
   clearAlerts(): void {
+    console.log('Clear Alerts button clicked');
     this.fraudAlertService.clearAlerts().subscribe({
       next: () => {
         this.filteredAlerts = [];
         this.fraudAlertService.resetAlerts();
+        this.cdr.markForCheck();
       },
       error: (error) => {
         console.error('Error clearing alerts:', error);
+        this.cdr.markForCheck();
       }
     });
   }
@@ -55,6 +61,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         // Always store the original alerts
         this._allAlerts = alerts;
         this.applyFilters();
+        this.cdr.markForCheck();
       })
     );
 
@@ -95,8 +102,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.filteredAlerts = alerts;
   }
 
-  onSearchChange(term: string): void {
-    this.searchTerm = term;
+  onSearchChange(): void {
     this.applyFilters();
   }
 
@@ -111,10 +117,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   clearFilters(): void {
+    console.log('Clear Filters button clicked');
     this.searchTerm = '';
     this.selectedFraudType = 'ALL';
     this.selectedSeverity = 'ALL';
     this.applyFilters();
+    this.cdr.markForCheck();
   }
 
   getSeverityClass(severity: string): string {
@@ -176,9 +184,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   refreshData(): void {
+    console.log('Refresh button clicked');
     this.fraudAlertService.getRecentAlerts(50).subscribe({
-      next: () => console.log('Data refreshed'),
-      error: (error) => console.error('Error refreshing data:', error)
+      next: (refreshedAlerts) => {
+        this._allAlerts = refreshedAlerts;
+        this.applyFilters();
+        this.cdr.markForCheck();
+        console.log('Data refreshed successfully');
+      },
+      error: (error) => {
+        console.error('Error refreshing data:', error);
+        this.cdr.markForCheck();
+      }
     });
   }
 
@@ -191,16 +208,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   exportAlerts(): void {
-    const alerts = [...this._allAlerts];
-    const dataStr = JSON.stringify(alerts, null, 2);
+    console.log('Export button clicked');
+    if (this.filteredAlerts.length === 0) {
+      console.warn('No alerts to export.');
+      return;
+    }
+    const dataStr = JSON.stringify(this.filteredAlerts, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
-    
+
     const link = document.createElement('a');
     link.href = url;
-    link.download = `fraud-alerts-${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `fraud_alerts_${new Date().toISOString()}.json`;
+    document.body.appendChild(link);
     link.click();
-    
+    document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    this.cdr.markForCheck();
   }
 }

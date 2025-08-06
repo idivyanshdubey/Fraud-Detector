@@ -52,23 +52,34 @@ class FraudDetectionJob:
         self.BLACKLISTED_CARDS = ["4532-0000-0000-0001", "4532-0000-0000-0002"]
 
     def read_kafka_stream(self):
-        """Read streaming data from Kafka topic"""
+        """Read streaming data from Kafka topic using env config"""
+        import os
+        kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        kafka_topic = os.getenv("TRANSACTION_TOPIC", "credit_transactions")
         return self.spark \
             .readStream \
             .format("kafka") \
-            .option("kafka.bootstrap.servers", "localhost:9092") \
-            .option("subscribe", "credit_transactions") \
+            .option("kafka.bootstrap.servers", kafka_bootstrap) \
+            .option("subscribe", kafka_topic) \
             .option("startingOffsets", "latest") \
             .option("failOnDataLoss", "false") \
             .load()
 
     def parse_transactions(self, kafka_df):
-        """Parse JSON messages from Kafka"""
-        return kafka_df.select(
+        """Parse JSON messages from Kafka with error handling"""
+        parsed = kafka_df.select(
             col("key").cast("string").alias("card_key"),
             from_json(col("value").cast("string"), self.transaction_schema).alias("transaction"),
             col("timestamp").alias("kafka_timestamp")
-        ).select(
+        )
+        # Filter out malformed records
+        valid = parsed.filter(col("transaction").isNotNull())
+        invalid = parsed.filter(col("transaction").isNull())
+        # Log count of malformed records (if any)
+        invalid_count = invalid.count()
+        if invalid_count > 0:
+            logger.warning(f"Dropped {invalid_count} malformed records from Kafka stream.")
+        return valid.select(
             col("card_key"),
             col("transaction.*"),
             col("kafka_timestamp")
@@ -155,7 +166,10 @@ class FraudDetectionJob:
         )
 
     def write_to_kafka(self, alerts_df):
-        """Write fraud alerts to Kafka topic"""
+        """Write fraud alerts to Kafka topic using env config"""
+        import os
+        kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        alert_topic = os.getenv("ALERT_TOPIC", "fraud_alerts")
         kafka_output = alerts_df.select(
             col("card_number").alias("key"),
             to_json(struct(
@@ -176,8 +190,8 @@ class FraudDetectionJob:
         
         return kafka_output.writeStream \
             .format("kafka") \
-            .option("kafka.bootstrap.servers", "localhost:9092") \
-            .option("topic", "fraud_alerts") \
+            .option("kafka.bootstrap.servers", kafka_bootstrap) \
+            .option("topic", alert_topic) \
             .option("checkpointLocation", "./checkpoint/kafka_output") \
             .outputMode("append") \
             .start()
@@ -193,9 +207,10 @@ class FraudDetectionJob:
             .start()
 
     def run(self):
-        """Main execution method"""
+        """Main execution method with robust error handling and graceful shutdown"""
         logger.info("Starting Fraud Detection Streaming Job...")
-        
+        kafka_query = None
+        console_query = None
         try:
             # Read from Kafka
             kafka_stream = self.read_kafka_stream()
@@ -220,10 +235,22 @@ class FraudDetectionJob:
             kafka_query.awaitTermination()
             console_query.awaitTermination()
             
+        except KeyboardInterrupt:
+            logger.info("Received KeyboardInterrupt, shutting down gracefully...")
         except Exception as e:
             logger.error(f"Error in fraud detection job: {str(e)}")
             raise
         finally:
+            if kafka_query is not None:
+                try:
+                    kafka_query.stop()
+                except Exception as e:
+                    logger.warning(f"Could not stop kafka_query: {e}")
+            if console_query is not None:
+                try:
+                    console_query.stop()
+                except Exception as e:
+                    logger.warning(f"Could not stop console_query: {e}")
             self.spark.stop()
 
 if __name__ == "__main__":

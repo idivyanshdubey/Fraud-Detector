@@ -10,7 +10,7 @@ alert = {
     "transaction_id": "TX123456",
     "card_number": "4111111111111111",
     "merchant": "Test Merchant",
-    "amount": 123.45,
+    "amount": 121.45,
     "currency": "USD",
     "timestamp": "2025-08-06T12:45:00",
     "fraud_type": "Test Fraud",
@@ -20,6 +20,9 @@ alert = {
     "location": {"city": "Test City"}
 }
 
-producer.send('fraud_alerts', alert)
+producer.send('fraud_alerts', {
+    "type": "fraud_alert",
+    "data": alert
+})
 producer.flush()
 print("Test alert produced!")

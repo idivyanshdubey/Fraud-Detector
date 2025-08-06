@@ -101,7 +101,10 @@ class TransactionProducer:
                 self.producer.send(
                     self.topic,
                     key=key,
-                    value=transaction
+                    value={
+                        "type": "fraud_alert",
+                        "data": transaction
+                    }
                 )
                 
                 logger.info(f"Sent transaction: {transaction['transaction_id']} - "

@@ -94,9 +94,9 @@ export class FraudAlertService {
           console.log('Connection established:', message);
         } else if (message.type === 'heartbeat') {
           // Handle heartbeat
-        } else {
-          // Handle fraud alert
-          this.handleNewAlert(message);
+        } else if (message.type === 'fraud_alert' && message.data) {
+          // Handle fraud alert in new format
+          this.handleNewAlert(message.data);
         }
       })
     ).subscribe();
@@ -118,15 +118,19 @@ export class FraudAlertService {
     this.updateStats();
   }
 
-  private handleNewAlert(alert: FraudAlert): void {
+  private handleNewAlert(alert: any): void {
+    // Defensive: unwrap {data} if present
+    let realAlert = alert;
+    if (!alert.transaction_id && alert.data) {
+      realAlert = alert.data;
+    }
+    console.log('[FraudAlertService] New alert received:', realAlert);
     const currentAlerts = this.alertsSubject.value;
-    const updatedAlerts = [alert, ...currentAlerts];
+    const updatedAlerts = [realAlert, ...currentAlerts];
     // Keep only last 100 alerts in memory
     if (updatedAlerts.length > 100) {
       updatedAlerts.splice(100);
     }
-    this.alertsSubject.next(updatedAlerts);
-    
     this.alertsSubject.next(updatedAlerts);
     this.updateStats();
   }

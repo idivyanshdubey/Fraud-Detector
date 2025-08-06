@@ -2,13 +2,14 @@ import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 
+
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, DashboardComponent],
+        imports: [CommonModule, DashboardComponent],
   template: `
     <div class="app-container">
-      <app-dashboard></app-dashboard>
+            <app-dashboard></app-dashboard>
     </div>
   `,
   styles: [`
