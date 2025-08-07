@@ -397,6 +397,129 @@ async def get_websocket_clients():
         "timestamp": datetime.now().isoformat()
     }
 
+# Fraud Prediction API Integration
+class TransactionData(BaseModel):
+    transaction_id: str
+    amount: float
+    merchant: str
+    card_number: str
+    timestamp: str
+    location: dict = {"lat": 0.0, "lng": 0.0}
+    customer_id: str
+    category: Optional[str] = "unknown"
+
+@app.post("/api/predict-fraud")
+async def predict_fraud(transaction: TransactionData):
+    """Fraud prediction endpoint - integrated from fraud_predict_api.py"""
+    try:
+        # Convert to Spark job format
+        spark_payload = {
+            "transaction_id": transaction.transaction_id,
+            "amount": transaction.amount,
+            "merchant": transaction.merchant,
+            "card_number": transaction.card_number,
+            "timestamp": transaction.timestamp,
+            "latitude": transaction.location.get("lat", 0.0),
+            "longitude": transaction.location.get("lng", 0.0),
+            "customer_id": transaction.customer_id,
+            "category": transaction.category
+        }
+        
+        # Mock Spark prediction (replace with actual Spark API call)
+        # For now, return a simple prediction based on amount and merchant
+        amount = transaction.amount
+        merchant = transaction.merchant.lower()
+        
+        # Robust fraud detection rules
+        risk_factors = []
+        risk_score = 0
+        confidence = 0.15  # default low confidence
+        is_fraud = False
+
+        # 1. Amount-based
+        if amount > 5000:
+            risk_factors.append("Very high transaction amount")
+            risk_score += 40
+        elif amount > 2000:
+            risk_factors.append("High transaction amount")
+            risk_score += 25
+        elif amount < 100:
+            risk_factors.append("Very low transaction amount")
+            risk_score -= 10
+
+        # 2. Merchant analysis
+        suspicious_keywords = ["test", "fraud", "scam", "bitcoin", "crypto", "gift card"]
+        if any(word in merchant for word in suspicious_keywords):
+            risk_factors.append("Suspicious merchant name")
+            risk_score += 25
+
+        # 3. Card number pattern
+        card_number = transaction.card_number.replace('-', '').replace(' ', '')
+        if card_number == "" or len(card_number) < 8:
+            risk_factors.append("Invalid card number format")
+            risk_score += 20
+        if card_number.isdigit():
+            if len(set(card_number)) == 1:
+                risk_factors.append("Card number has all repeating digits")
+                risk_score += 20
+            if card_number in ["00000000", "12345678", "11111111"]:
+                risk_factors.append("Card number is a known invalid pattern")
+                risk_score += 20
+
+        # 4. Time-based
+        try:
+            from dateutil.parser import parse as dtparse
+            dt = dtparse(transaction.timestamp)
+            if dt.hour < 5 or dt.hour > 23:
+                risk_factors.append("Odd transaction hour (late night/early morning)")
+                risk_score += 15
+        except Exception:
+            risk_factors.append("Invalid or missing timestamp")
+            risk_score += 10
+
+        # 5. Category-merchant mismatch
+        category = (transaction.category or "").lower()
+        if (category == "electronics" and "grocery" in merchant) or (category == "grocery" and "electronics" in merchant):
+            risk_factors.append("Category and merchant mismatch")
+            risk_score += 15
+
+        # 6. Location (mock: flag if lat/lng is 0)
+        if transaction.location.get("lat", 0.0) == 0.0 and transaction.location.get("lng", 0.0) == 0.0:
+            risk_factors.append("Missing or invalid location")
+            risk_score += 10
+
+        # Aggregate
+        if risk_score >= 60:
+            is_fraud = True
+            confidence = 0.9
+        elif risk_score >= 40:
+            is_fraud = True
+            confidence = 0.75
+        elif risk_score >= 25:
+            is_fraud = True
+            confidence = 0.6
+        else:
+            is_fraud = False
+            confidence = 0.15
+
+        reason = ", ".join(risk_factors) if risk_factors else "Normal transaction pattern"
+
+        return {
+            "transaction_id": transaction.transaction_id,
+            "is_fraud": is_fraud,
+            "confidence": confidence,
+            "risk_score": min(max(risk_score, 0), 100),
+            "reason": reason,
+            "explanation": f"Transaction analyzed: ${amount} at {transaction.merchant}",
+            "timestamp": datetime.now().isoformat(),
+            "spark_job_id": f"mock_job_{transaction.transaction_id}",
+            "model_version": "1.0.0-demo"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in fraud prediction: {e}")
+        raise HTTPException(status_code=500, detail=f"Fraud prediction failed: {str(e)}")
+
 @app.websocket("/ws/fraud-alerts")
 async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
     """Enhanced WebSocket endpoint with client identification and heartbeat"""

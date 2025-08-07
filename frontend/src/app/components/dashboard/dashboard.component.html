@@ -1,4 +1,5 @@
 <div class="dashboard-container">
+  <app-toast></app-toast>
   <!-- Header -->
   <header class="dashboard-header">
     <div class="header-content">
@@ -8,15 +9,20 @@
           <span>{{ getConnectionStatusIcon((connectionStatus$ | async) || '') }}</span>
           <span>{{ (connectionStatus$ | async) || '' | titlecase }}</span>
         </div>
-        <button class="refresh-btn" (click)="refreshData()" title="Refresh Data">
-          🔄 Refresh
-        </button>
-        <button class="export-btn" (click)="exportAlerts()" title="Export Alerts">
-          📥 Export
-        </button>
-        <button class="clear-btn" (click)="clearAlerts()" title="Clear All Alerts">
-          🗑️ Clear Alerts
-        </button>
+        <div class="header-actions">
+          <button class="header-btn" (click)="clearAlerts()" [disabled]="!filteredAlerts.length">
+            <i>🧹</i>
+            Clear Alerts
+          </button>
+          <button class="header-btn" (click)="refreshData()">
+            <i>🔄</i>
+            Refresh
+          </button>
+          <button class="header-btn" (click)="exportAlerts()" [disabled]="!filteredAlerts.length">
+            <i>📥</i>
+            Export
+          </button>
+        </div>
       </div>
     </div>
   </header>

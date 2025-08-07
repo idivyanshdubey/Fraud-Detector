@@ -1,0 +1,88 @@
+<div class="upload-page">
+  <div class="upload-container">
+  <h1>🔍 Transaction Fraud Detection</h1>
+  <p class="subtitle">Upload JSON transaction data to check for fraud</p>
+
+  <div class="upload-section">
+    <div class="file-upload-area" 
+         (drop)="onDrop($event)"
+         (dragover)="onDragOver($event)">
+      <i class="upload-icon">📁</i>
+      <p>Drag & drop JSON file here or</p>
+      <input type="file" 
+             accept=".json" 
+             (change)="onFileSelected($event)"
+             class="file-input" #fileInput style="display:none;">
+      <button class="btn-secondary" type="button" (click)="fileInput.click()">Choose File</button>
+    </div>
+  </div>
+
+  <div class="form-section" *ngIf="!isProcessing">
+    <h3>Transaction Details</h3>
+    
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Transaction ID</label>
+        <input type="text" [(ngModel)]="sampleData.transaction_id" class="form-control">
+      </div>
+      
+      <div class="form-group">
+        <label>Amount ($)</label>
+        <input type="number" [(ngModel)]="sampleData.amount" class="form-control" step="0.01">
+      </div>
+      
+      <div class="form-group">
+        <label>Merchant</label>
+        <input type="text" [(ngModel)]="sampleData.merchant" class="form-control">
+      </div>
+      
+      <div class="form-group">
+        <label>Card Number</label>
+        <input type="text" [(ngModel)]="sampleData.card_number" class="form-control">
+      </div>
+      
+      <div class="form-group">
+        <label>Customer ID</label>
+        <input type="text" [(ngModel)]="sampleData.customer_id" class="form-control">
+      </div>
+      
+      <div class="form-group">
+        <label>Category</label>
+        <input type="text" [(ngModel)]="sampleData.category" class="form-control">
+      </div>
+    </div>
+
+    <div class="button-group">
+      <button class="btn-primary" (click)="predictFraud()" [disabled]="isProcessing">
+        <span *ngIf="!isProcessing">🔍 Check for Fraud</span>
+        <span *ngIf="isProcessing">⏳ Analyzing...</span>
+      </button>
+      <button class="btn-secondary" (click)="useSampleData()">🎲 Use Sample</button>
+      <button class="btn-secondary" (click)="resetForm()">🔄 Reset</button>
+    </div>
+  </div>
+
+  <div class="processing" *ngIf="isProcessing">
+    <div class="spinner"></div>
+    <p>Analyzing transaction with fraud detection model...</p>
+  </div>
+
+
+  <div class="result-section" *ngIf="prediction && !isProcessing">
+    <h3>📊 Fraud Analysis Result</h3>
+    <div class="result-card" [class.fraud]="prediction.is_fraud" [class.safe]="!prediction.is_fraud">
+      <div class="result-header">
+        <span class="status-icon">{{ prediction.is_fraud ? '🚨' : '✅' }}</span>
+        <span class="status-text">{{ prediction.is_fraud ? 'FRAUD DETECTED' : 'TRANSACTION SAFE' }}</span>
+      </div>
+      <div class="result-details">
+        <p><strong>Transaction ID:</strong> {{ prediction.transaction_id }}</p>
+        <p><strong>Risk Score:</strong> {{ prediction.risk_score.toFixed(1) }}%</p>
+        <p><strong>Confidence:</strong> {{ (prediction.confidence * 100).toFixed(1) }}%</p>
+        <p><strong>Reason:</strong> {{ prediction.reason }}</p>
+        <p><strong>Explanation:</strong> {{ prediction.explanation }}</p>
+        <p><strong>Analysis Time:</strong> {{ prediction.timestamp | date:'medium' }}</p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,13 @@
+{
+  "transaction_id": "TXN_TEST_001",
+  "amount": 2500.75,
+  "merchant": "Amazon Electronics",
+  "card_number": "4532-1234-5678-9012",
+  "timestamp": "2024-08-08T10:30:00Z",
+  "location": {
+    "lat": 40.7128,
+    "lng": -74.0060
+  },
+  "customer_id": "CUST_12345",
+  "category": "electronics"
+}

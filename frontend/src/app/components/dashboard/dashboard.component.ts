@@ -1,14 +1,17 @@
 import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, AsyncPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterModule } from '@angular/router';
 import { MaskCardPipe } from '../../pipes/mask-card.pipe';
-import { Observable, Subscription, interval } from 'rxjs';
+import { Subject, takeUntil, Observable, Subscription, interval } from 'rxjs';
 import { FraudAlertService, FraudAlert, FraudStats } from '../../services/fraud-alert.service';
+import { ToastService } from '../../services/toast.service';
+import { ToastComponent } from '../../components/toast/toast.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, AsyncPipe, MaskCardPipe, FormsModule],
+  imports: [CommonModule, FormsModule, RouterModule, MaskCardPipe, AsyncPipe, ToastComponent],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -30,10 +33,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
   
   private subscription = new Subscription();
   private autoRefresh = true;
+  private ngUnsubscribe = new Subject<void>();
+  private websocketSubscription?: Subscription;
 
   constructor(
     private fraudAlertService: FraudAlertService,
-    private cdr: ChangeDetectorRef
+
+    private cdr: ChangeDetectorRef,
+    private toastService: ToastService
   ) {
     this.alerts$ = this.fraudAlertService.getAlerts();
     this.stats$ = this.fraudAlertService.getStats();
@@ -46,10 +53,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
       next: () => {
         this.filteredAlerts = [];
         this.fraudAlertService.resetAlerts();
+        this.toastService.success('All alerts cleared successfully');
         this.cdr.markForCheck();
       },
       error: (error) => {
         console.error('Error clearing alerts:', error);
+        this.toastService.error('Failed to clear alerts');
         this.cdr.markForCheck();
       }
     });
@@ -73,6 +82,20 @@ export class DashboardComponent implements OnInit, OnDestroy {
         })
       );
     }
+
+    // Monitor connection status for real-time updates
+    this.subscription.add(
+      this.connectionStatus$.subscribe(status => {
+        console.log('WebSocket connection status:', status);
+        if (status === 'connected') {
+          this.toastService.success('Real-time alerts connected');
+        } else if (status === 'disconnected') {
+          this.toastService.warning('Real-time alerts disconnected');
+        } else if (status === 'error') {
+          this.toastService.error('Connection error - alerts may not update in real-time');
+        }
+      })
+    );
   }
 
   ngOnDestroy(): void {
@@ -184,16 +207,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   refreshData(): void {
-    console.log('Refresh button clicked');
-    this.fraudAlertService.getRecentAlerts(50).subscribe({
+    console.log('Refresh button clicked - syncing with real-time data');
+    this.fraudAlertService.refreshAlerts(50).subscribe({
       next: (refreshedAlerts) => {
-        this._allAlerts = refreshedAlerts;
+        // The service will automatically update alertsSubject, so we just need to ensure UI updates
         this.applyFilters();
         this.cdr.markForCheck();
-        console.log('Data refreshed successfully');
+        this.toastService.success(`Synced with ${refreshedAlerts.length} real-time alerts`);
+        console.log('Real-time data synced successfully');
       },
       error: (error) => {
-        console.error('Error refreshing data:', error);
+        console.error('Error syncing real-time data:', error);
+        this.toastService.error('Failed to sync real-time data');
         this.cdr.markForCheck();
       }
     });
@@ -210,6 +235,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   exportAlerts(): void {
     console.log('Export button clicked');
     if (this.filteredAlerts.length === 0) {
+      this.toastService.warning('No alerts to export');
       console.warn('No alerts to export.');
       return;
     }
@@ -224,6 +250,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    this.toastService.success(`Exported ${this.filteredAlerts.length} alerts`);
     this.cdr.markForCheck();
   }
 }

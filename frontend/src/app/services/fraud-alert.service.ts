@@ -90,6 +90,8 @@ export class FraudAlertService {
         return [];
       }),
       tap(message => {
+        console.log('[WebSocket] Received message:', message);
+        
         if (message.type === 'connection_established') {
           console.log('Connection established:', message);
         } else if (message.type === 'heartbeat') {
@@ -97,6 +99,9 @@ export class FraudAlertService {
         } else if (message.type === 'fraud_alert' && message.data) {
           // Handle fraud alert in new format
           this.handleNewAlert(message.data);
+        } else if (message.transaction_id) {
+          // Handle raw alert object (legacy format)
+          this.handleNewAlert(message);
         }
       })
     ).subscribe();
@@ -125,13 +130,31 @@ export class FraudAlertService {
       realAlert = alert.data;
     }
     console.log('[FraudAlertService] New alert received:', realAlert);
-    const currentAlerts = this.alertsSubject.value;
-    const updatedAlerts = [realAlert, ...currentAlerts];
-    // Keep only last 100 alerts in memory
-    if (updatedAlerts.length > 100) {
-      updatedAlerts.splice(100);
+    
+    // Ensure we have a valid alert object
+    if (!realAlert || !realAlert.transaction_id) {
+      console.warn('[FraudAlertService] Invalid alert received:', realAlert);
+      return;
     }
-    this.alertsSubject.next(updatedAlerts);
+    
+    const currentAlerts = this.alertsSubject.value;
+    
+    // Check for duplicates based on transaction_id
+    const existingIndex = currentAlerts.findIndex(a => a.transaction_id === realAlert.transaction_id);
+    if (existingIndex !== -1) {
+      // Update existing alert instead of adding duplicate
+      currentAlerts[existingIndex] = realAlert;
+      this.alertsSubject.next([...currentAlerts]);
+    } else {
+      // Add new alert to the beginning of the array
+      const updatedAlerts = [realAlert, ...currentAlerts];
+      // Keep only last 100 alerts in memory
+      if (updatedAlerts.length > 100) {
+        updatedAlerts.splice(100);
+      }
+      this.alertsSubject.next(updatedAlerts);
+    }
+    
     this.updateStats();
   }
 
@@ -186,6 +209,19 @@ export class FraudAlertService {
       { params: { limit } }
     ).pipe(
       tap(response => {
+        this.alertsSubject.next(response.alerts);
+      }),
+      map((response: any) => response.alerts)
+    );
+  }
+
+  refreshAlerts(limit: number = 50): Observable<FraudAlert[]> {
+    return this.http.get<{ alerts: FraudAlert[] }>(
+      `${this.API_BASE_URL}/fraud-alerts`,
+      { params: { limit } }
+    ).pipe(
+      tap(response => {
+        console.log('Real-time data fetched:', response.alerts.length, 'alerts');
         this.alertsSubject.next(response.alerts);
       }),
       map((response: any) => response.alerts)
