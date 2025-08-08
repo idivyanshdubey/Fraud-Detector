@@ -408,80 +408,68 @@ class TransactionData(BaseModel):
     customer_id: str
     category: Optional[str] = "unknown"
 
+# Import and use the ML fraud predictor
+from ml_model.fraud_predictor import get_fraud_predictor
+
 @app.post("/api/predict-fraud")
 async def predict_fraud(transaction: TransactionData):
-    """Fraud prediction endpoint - integrated from fraud_predict_api.py"""
+    """Fraud prediction endpoint using ML model integration"""
     try:
-        # Convert to Spark job format
-        spark_payload = {
+        # Import ML predictor
+        from ml_model.fraud_predictor import get_fraud_predictor
+        fraud_predictor = get_fraud_predictor()
+        
+        # Convert transaction data to dict format expected by ML model
+        transaction_dict = {
             "transaction_id": transaction.transaction_id,
             "amount": transaction.amount,
             "merchant": transaction.merchant,
             "card_number": transaction.card_number,
             "timestamp": transaction.timestamp,
-            "latitude": transaction.location.get("lat", 0.0),
-            "longitude": transaction.location.get("lng", 0.0),
+            "location": transaction.location,
             "customer_id": transaction.customer_id,
-            "category": transaction.category
+            "merchant_category": transaction.category or "unknown"
         }
         
-        # Mock Spark prediction (replace with actual Spark API call)
-        # For now, return a simple prediction based on amount and merchant
-        amount = transaction.amount
-        merchant = transaction.merchant.lower()
+        # Get ML prediction
+        prediction = fraud_predictor.predict(transaction_dict)
         
-        # Robust fraud detection rules
-        risk_factors = []
-        risk_score = 0
-        confidence = 0.15  # default low confidence
-        is_fraud = False
-
-        # 1. Amount-based
-        if amount > 5000:
-            risk_factors.append("Very high transaction amount")
-            risk_score += 40
-        elif amount > 2000:
-            risk_factors.append("High transaction amount")
-            risk_score += 25
-        elif amount < 100:
-            risk_factors.append("Very low transaction amount")
-            risk_score -= 10
-
-        # 2. Merchant analysis
-        suspicious_keywords = ["test", "fraud", "scam", "bitcoin", "crypto", "gift card"]
-        if any(word in merchant for word in suspicious_keywords):
-            risk_factors.append("Suspicious merchant name")
-            risk_score += 25
-
-        # 3. Card number pattern
-        card_number = transaction.card_number.replace('-', '').replace(' ', '')
-        if card_number == "" or len(card_number) < 8:
-            risk_factors.append("Invalid card number format")
-            risk_score += 20
-        if card_number.isdigit():
-            if len(set(card_number)) == 1:
-                risk_factors.append("Card number has all repeating digits")
-                risk_score += 20
-            if card_number in ["00000000", "12345678", "11111111"]:
-                risk_factors.append("Card number is a known invalid pattern")
-                risk_score += 20
-
-        # 4. Time-based
+        # Format response for API
+        return {
+            "transaction_id": transaction.transaction_id,
+            "is_fraud": prediction['is_fraud'],
+            "confidence": prediction['confidence'],
+            "fraud_probability": prediction['fraud_probability'],
+            "model_used": prediction['model_used'],
+            "risk_factors": [
+                k for k, v in prediction.get('feature_importance', {}).items() 
+                if v > 0.1
+            ],
+            "explanation": "Advanced ML model prediction based on comprehensive transaction patterns",
+            "timestamp": prediction['timestamp']
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in ML fraud prediction: {str(e)}")
+        # Fallback to rule-based detection if ML fails
         try:
-            from dateutil.parser import parse as dtparse
-            dt = dtparse(transaction.timestamp)
-            if dt.hour < 5 or dt.hour > 23:
-                risk_factors.append("Odd transaction hour (late night/early morning)")
-                risk_score += 15
-        except Exception:
-            risk_factors.append("Invalid or missing timestamp")
-            risk_score += 10
-
-        # 5. Category-merchant mismatch
-        category = (transaction.category or "").lower()
-        if (category == "electronics" and "grocery" in merchant) or (category == "grocery" and "electronics" in merchant):
-            risk_factors.append("Category and merchant mismatch")
-            risk_score += 15
+            amount = transaction.amount
+            is_fraud = amount > 1000
+            confidence = 0.85 if is_fraud else 0.15
+            
+            return {
+                "transaction_id": transaction.transaction_id,
+                "is_fraud": is_fraud,
+                "confidence": confidence,
+                "fraud_probability": 0.85 if is_fraud else 0.15,
+                "model_used": "rule_based_fallback",
+                "risk_factors": ["amount"],
+                "explanation": "Fallback rule-based detection (ML model unavailable)",
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as fallback_error:
+            logger.error(f"Fallback prediction also failed: {str(fallback_error)}")
+            raise HTTPException(status_code=500, detail=str(e))  
 
         # 6. Location (mock: flag if lat/lng is 0)
         if transaction.location.get("lat", 0.0) == 0.0 and transaction.location.get("lng", 0.0) == 0.0:
@@ -519,6 +507,45 @@ async def predict_fraud(transaction: TransactionData):
     except Exception as e:
         logger.error(f"Error in fraud prediction: {e}")
         raise HTTPException(status_code=500, detail=f"Fraud prediction failed: {str(e)}")
+
+@app.post("/api/predict-fraud-batch")
+async def predict_fraud_batch(request: dict):
+    """Batch fraud prediction endpoint using ML model"""
+    try:
+        from ml_model.fraud_predictor import get_fraud_predictor
+        fraud_predictor = get_fraud_predictor()
+        
+        transactions = request.get("transactions", [])
+        if not transactions:
+            raise HTTPException(status_code=400, detail="No transactions provided")
+        
+        results = []
+        for transaction in transactions:
+            result = fraud_predictor.predict(transaction)
+            results.append(result)
+        
+        return {
+            "batch_results": results,
+            "total_transactions": len(transactions),
+            "fraud_count": sum(1 for r in results if r.get("is_fraud", False)),
+            "model_used": "random_forest"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in batch fraud prediction: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/model-info")
+async def get_model_info():
+    """Get information about the ML fraud detection model"""
+    try:
+        from ml_model.fraud_predictor import get_fraud_predictor
+        fraud_predictor = get_fraud_predictor()
+        return fraud_predictor.get_model_info()
+        
+    except Exception as e:
+        logger.error(f"Error getting model info: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/ws/fraud-alerts")
 async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
